@@ -29,18 +29,10 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     var seen = [];
 
     var waitForSelect = 2;
-    connection.query("SELECT * FROM `traits`", (error, results, fields) => {
+    connection.query("SELECT uniQid FROM `traits`", (error, results, fields) => {
         if (error) throw error;
         for (var i = 0; i < results.length; i++) {
-            const traitData = results[i];
-            var trait: any = [];
-            trait.push(traitData.mutation);
-            trait.push(traitData.rarity);
-            trait.push(traitData.type);
-            trait.push(traitData.value);
-            trait.push(traitData.name);
-            trait.push(traitData.buddytype);
-            seen.push(JSON.stringify(traitData));
+            seen.push(results[i].uniQid);
         }
         waitForSelect -= 1;
     });
@@ -94,9 +86,11 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
             trait.push(microbuddy.species);
             if (i <= 5) microbuddy.dominants.push(trait);
             else microbuddy.recessives.push(trait);
+            var uniQid = traitData.type + traitData.value.split(' ')[0] + traitData.value.split(' ')[1] + microbuddy.species;
+            trait.push(uniQid);
 
-            if (!seen.includes(JSON.stringify(traitData))) {
-                seen.push(JSON.stringify(traitData));
+            if (!seen.includes(uniQid)) {
+                seen.push(uniQid);
                 traits.push(trait);
             }
         }
@@ -118,7 +112,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     console.log("Pushing traits to database");
     const traitChunks = chunk(traits, 100);
     for (var i = 0; i < traitChunks.length; i++) {
-        connection.query("INSERT INTO traits (mutation, rarity, type, value, name, buddytype) VALUES ?", [traitChunks[i]], (error, results, fields) => {
+        connection.query("INSERT IGNORE INTO traits (mutation, rarity, type, value, name, buddytype, uniQid) VALUES ?", [traitChunks[i]], (error, results, fields) => {
             if (error) throw error;
         });
     }

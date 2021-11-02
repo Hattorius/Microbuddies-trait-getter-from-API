@@ -25,104 +25,111 @@ connection.connect();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 (async () => {
-    var microbuddyId = 1;
-    var seen = [];
+    async function doTheLoop() {
+        var microbuddyId = 1;
+        var seen = [];
 
-    var waitForSelect = 2;
-    connection.query("SELECT uniQid FROM `traits`", (error, results, fields) => {
-        if (error) throw error;
-        for (var i = 0; i < results.length; i++) {
-            seen.push(results[i].uniQid);
-        }
-        waitForSelect -= 1;
-    });
-    connection.query("SELECT * FROM `microbuddies` ORDER BY `tokenId` DESC LIMIT 1", (error, results, fields) => {
-        if (error) throw error;
-        microbuddyId = results[0].tokenId + 1;
-        waitForSelect -= 1;
-    });
+        var waitForSelect = 2;
+        connection.query("SELECT uniQid FROM `traits`", (error, results, fields) => {
+            if (error) throw error;
+            for (var i = 0; i < results.length; i++) {
+                seen.push(results[i].uniQid);
+            }
+            waitForSelect -= 1;
+        });
+        connection.query("SELECT * FROM `microbuddies` ORDER BY `tokenId` DESC LIMIT 1", (error, results, fields) => {
+            if (error) throw error;
+            microbuddyId = results[0].tokenId + 1;
+            waitForSelect -= 1;
+        });
 
-    while (waitForSelect !== 0) { await delay(1000); };
+        while (waitForSelect !== 0) { await delay(1000); };
 
-    var microbuddies = [];
-    var traits = [];
-    while(true) {
-        const response = await fetch('https://api.microbuddies.io/' + microbuddyId.toString() + '.json');
-        var data;
-        var microbuddy: any = {};
-
-        try {
-            data = await response.json();
-        } catch (err) {
-            console.log(err);
-            microbuddyId += 1;
+        var microbuddies = [];
+        var traits = [];
+        while(true) {
             const response = await fetch('https://api.microbuddies.io/' + microbuddyId.toString() + '.json');
+            var data;
+            var microbuddy: any = {};
+
             try {
                 data = await response.json();
             } catch (err) {
                 console.log(err);
-                break;
+                microbuddyId += 1;
+                const response = await fetch('https://api.microbuddies.io/' + microbuddyId.toString() + '.json');
+                try {
+                    data = await response.json();
+                } catch (err) {
+                    console.log(err);
+                    break;
+                }
             }
-        }
 
-        microbuddy.tokenId = microbuddyId;
-        microbuddy.quote = data.description.split('"')[1];
-        microbuddy.name = data.name.split(' ')[0];
-        microbuddy.species = data.name.split(' ').at(-1);
-        microbuddy.generation = data.attributes[1].value;
-        microbuddy.dominants = [];
-        microbuddy.recessives = [];
+            microbuddy.tokenId = microbuddyId;
+            microbuddy.quote = data.description.split('"')[1];
+            microbuddy.name = data.name.split(' ')[0];
+            microbuddy.species = data.name.split(' ').at(-1);
+            microbuddy.generation = data.attributes[1].value;
+            microbuddy.dominants = [];
+            microbuddy.recessives = [];
 
-        const microbuddyTraits =  data.dominants.concat(data.recessives);
-        for (var i = 0; i < microbuddyTraits.length; i++) {
-            const traitData = microbuddyTraits[i];
-            var trait: any = [];
-            if (traitData.mutation) trait.push(1);
-            else trait.push(0);
-            trait.push(traitData.rarity);
-            trait.push(traitData.type);
-            trait.push(traitData.value.split(' ')[0]);
-            trait.push(traitData.value.split(' ')[1]);
-            trait.push(microbuddy.species);
-            if (i <= 5) microbuddy.dominants.push(trait);
-            else microbuddy.recessives.push(trait);
-            var uniQid = traitData.type + traitData.value.split(' ')[0] + traitData.value.split(' ')[1] + microbuddy.species;
-            trait.push(uniQid);
+            const microbuddyTraits =  data.dominants.concat(data.recessives);
+            for (var i = 0; i < microbuddyTraits.length; i++) {
+                const traitData = microbuddyTraits[i];
+                var trait: any = [];
+                if (traitData.mutation) trait.push(1);
+                else trait.push(0);
+                trait.push(traitData.rarity);
+                trait.push(traitData.type);
+                trait.push(traitData.value.split(' ')[0]);
+                trait.push(traitData.value.split(' ')[1]);
+                trait.push(microbuddy.species);
+                if (i <= 5) microbuddy.dominants.push(trait);
+                else microbuddy.recessives.push(trait);
+                var uniQid = traitData.type + traitData.value.split(' ')[0] + traitData.value.split(' ')[1] + microbuddy.species;
+                trait.push(uniQid);
 
-            if (!seen.includes(uniQid)) {
-                seen.push(uniQid);
-                traits.push(trait);
+                if (!seen.includes(uniQid)) {
+                    seen.push(uniQid);
+                    traits.push(trait);
+                }
             }
+
+            const microbuddyRaw = [
+                microbuddy.tokenId,
+                microbuddy.quote,
+                microbuddy.name,
+                microbuddy.species,
+                microbuddy.generation,
+                JSON.stringify(microbuddy.dominants),
+                JSON.stringify(microbuddy.recessives)
+            ];
+
+            console.log("Got Microbuddy #"+microbuddyId.toString());
+            microbuddies.push(microbuddyRaw);
+            microbuddyId++;
         }
+        console.log("Pushing traits to database");
+        const traitChunks = chunk(traits, 100);
+        for (var i = 0; i < traitChunks.length; i++) {
+            connection.query("INSERT IGNORE INTO traits (mutation, rarity, type, value, name, buddytype, uniQid) VALUES ?", [traitChunks[i]], (error, results, fields) => {
+                if (error) throw error;
+            });
+        }
+        console.log("Pushing buddies to database");
+        const microbuddyChunks = chunk(microbuddies, 100);
+        for (var i = 0; i < microbuddyChunks.length; i++) {
+            connection.query("INSERT INTO microbuddies (tokenId, quote, name, species, generation, dominants, recessives) VALUES ?", [microbuddyChunks[i]], (error, results, fields) => {
+                if (error) throw error;
+            });
+        }
+    }
 
-        const microbuddyRaw = [
-            microbuddy.tokenId,
-            microbuddy.quote,
-            microbuddy.name,
-            microbuddy.species,
-            microbuddy.generation,
-            JSON.stringify(microbuddy.dominants),
-            JSON.stringify(microbuddy.recessives)
-        ];
-
-        console.log("Got Microbuddy #"+microbuddyId.toString());
-        microbuddies.push(microbuddyRaw);
-        microbuddyId++;
+    while (true) {
+        await doTheLoop();
+        console.log("Waiting 60 seconds before searching for new transactions");
+        await delay(60000);
     }
-    console.log("Pushing traits to database");
-    const traitChunks = chunk(traits, 100);
-    for (var i = 0; i < traitChunks.length; i++) {
-        connection.query("INSERT IGNORE INTO traits (mutation, rarity, type, value, name, buddytype, uniQid) VALUES ?", [traitChunks[i]], (error, results, fields) => {
-            if (error) throw error;
-        });
-    }
-    console.log("Pushing buddies to database");
-    const microbuddyChunks = chunk(microbuddies, 100);
-    for (var i = 0; i < microbuddyChunks.length; i++) {
-        connection.query("INSERT INTO microbuddies (tokenId, quote, name, species, generation, dominants, recessives) VALUES ?", [microbuddyChunks[i]], (error, results, fields) => {
-            if (error) throw error;
-        });
-    }
-    connection.end();
 })()
 

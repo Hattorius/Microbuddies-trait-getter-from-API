@@ -128,8 +128,8 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     while (true) {
         await doTheLoop();
-        console.log("Waiting 60 seconds before searching for new transactions");
-        await delay(60000);
+        console.log("Waiting 80 seconds before searching for new transactions");
+        await delay(80000);
     }
 })()
 

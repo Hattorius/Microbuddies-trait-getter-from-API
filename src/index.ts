@@ -25,8 +25,33 @@ connection.connect();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 (async () => {
-    var microbuddyId = 8286;
+    var microbuddyId = 1;
     var seen = [];
+
+    var waitForSelect = 2;
+    connection.query("SELECT * FROM `traits`", (error, results, fields) => {
+        if (error) throw error;
+        for (var i = 0; i < results.length; i++) {
+            const traitData = results[i];
+            var trait: any = [];
+            trait.push(traitData.mutation);
+            trait.push(traitData.rarity);
+            trait.push(traitData.type);
+            trait.push(traitData.value);
+            trait.push(traitData.name);
+            trait.push(traitData.buddytype);
+            seen.push(JSON.stringify(traitData));
+        }
+        waitForSelect -= 1;
+    });
+    connection.query("SELECT * FROM `microbuddies` ORDER BY `tokenId` DESC LIMIT 1", (error, results, fields) => {
+        if (error) throw error;
+        microbuddyId = results[0].tokenId + 1;
+        waitForSelect -= 1;
+    });
+
+    while (waitForSelect !== 0) { await delay(1000); };
+
     var microbuddies = [];
     var traits = [];
     while(true) {
